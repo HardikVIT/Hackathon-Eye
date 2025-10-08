@@ -2,4 +2,7 @@ ultralytics
 opencv-python
 pyttsx3
 SpeechRecognition
-PyAudio
+sounddevice
+soundfile
+numpy
+pyaudio
