@@ -2,7 +2,6 @@ from ultralytics import YOLO
 import cv2
 import pyttsx3
 import speech_recognition as sr
-import threading
 import numpy as np
 import sounddevice as sd
 import wave
@@ -25,15 +24,17 @@ def spatialize_audio(wav_path, azimuth_deg, distance=1.0):
     data = data.astype(np.float32) / 32768.0
     az = math.radians(azimuth_deg)
 
-    # Interaural delay and loudness difference
-    max_delay = int(0.0007 * rate)  # ≈0.7ms
+    # interaural delay and loudness difference
+    max_delay = int(0.0007 * rate)
     delay = int(max_delay * math.sin(az))
     gain_left = 1.0 - 0.4 * max(0, math.sin(az))
     gain_right = 1.0 - 0.4 * max(0, -math.sin(az))
 
+    # --- Distance-based attenuation (stronger perceptual drop-off)
     distance = max(0.5, distance)
-    gain_left /= distance
-    gain_right /= distance
+    attenuation = 1 / (distance ** 1.5)
+    gain_left *= attenuation
+    gain_right *= attenuation
 
     if delay > 0:
         left = np.concatenate([np.zeros(delay), data * gain_left])[:len(data)]
@@ -44,6 +45,7 @@ def spatialize_audio(wav_path, azimuth_deg, distance=1.0):
 
     stereo = np.vstack([left, right]).T
     return stereo, rate
+
 
 def play_spatial_voice(text, azimuth_deg, distance=1.0):
     tmp_wav = os.path.join(tempfile.gettempdir(), "voice.wav")
@@ -69,7 +71,6 @@ classNames = ["person", "bicycle","bottle", "car", "motorbike", "aeroplane", "bu
               "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors",
               "teddy bear", "hair drier", "toothbrush"]
 
-# Ask what to look for
 play_spatial_voice("What do you want me to look for?", 0)
 
 r = sr.Recognizer()
@@ -86,7 +87,10 @@ except Exception as e:
     text = "laptop"
 
 flag = 0
-HFOV_deg = 70.0  # approximate webcam field of view
+HFOV_deg = 70.0  # horizontal FOV
+KNOWN_OBJECT_WIDTH = 0.3  # meters (average laptop width)
+FOCAL_LENGTH = 700        # adjust experimentally
+
 while flag == 0:
     success, img = cap.read()
     if not success:
@@ -103,13 +107,20 @@ while flag == 0:
             label = classNames[cls]
 
             if label == text:
-                # Compute azimuth from bounding box center
+                # compute azimuth
                 x_c = (x1 + x2) / 2.0
                 azimuth = ((x_c - w/2) / (w/2)) * (HFOV_deg / 2.0)
 
-                print(f"I can see {label} at {azimuth:.1f} degrees")
+                obj_pixel_width = max(x2 - x1, 1)                # avoid zero-div
+                # If FOCAL_LENGTH is in pixels and KNOWN_OBJECT_WIDTH in meters -> distance in meters
+                distance_m = (KNOWN_OBJECT_WIDTH * FOCAL_LENGTH) / float(obj_pixel_width)
 
-                play_spatial_voice(f"I can see {label} on your {'right' if azimuth>0 else 'left'}", azimuth)
+                # Print raw values for debugging (important!)
+                print("pixel_width:", obj_pixel_width, "focal(px):", FOCAL_LENGTH, "distance(m):", distance_m)
+
+                print(f"I can see {label} at {azimuth:.1f}° and {distance_m:.2f} m away")
+
+                play_spatial_voice(f"I can see {label} on your {'right' if azimuth>0 else 'left'} about {distance_m:.1f} meters away", azimuth, distance_m)
                 flag = 1
 
             # draw detection
