@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🎧 Object Detection & Spatial Audio</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0d1117;
+      color: #f0f6fc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    h1 { color: #58a6ff; margin-bottom: 20px; }
+    input, button { padding: 8px 12px; margin: 5px; font-size: 1rem; }
+    video { width: 480px; border-radius: 10px; box-shadow: 0 0 15px rgba(88, 166, 255, 0.3); margin-top: 20px; }
+    #status { font-size: 1rem; color: #8b949e; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>📷 Real-time Object Detection + Spatial Audio</h1>
+
+  <label for="target">Enter objects to detect (comma-separated):</label>
+  <input type="text" id="target" placeholder="person,dog" />
+  <button id="startBtn">Start Camera</button>
+
+  <video id="video" autoplay playsinline></video>
+  <p id="status">Not connected</p>
+
+  <script>
+    const startBtn = document.getElementById('startBtn');
+    const video = document.getElementById('video');
+    const targetInput = document.getElementById('target');
+    const statusText = document.getElementById('status');
+
+    let ws;
+    let targetObjects = [];
+
+    startBtn.onclick = async () => {
+    targetObjects = targetInput.value.split(',').map(s => s.trim().toLowerCase());
+    if (!targetObjects.length) return alert("Enter at least one object!");
+
+    ws = new WebSocket('ws://localhost:8000/ws');
+
+    ws.onopen = () => {
+        statusText.textContent = '✅ Connected to backend';
+        // Send target objects
+        ws.send(JSON.stringify({ target_objects: targetObjects }));
+    };
+    ws.onclose = () => statusText.textContent = '❌ Disconnected from backend';
+    ws.onerror = (err) => statusText.textContent = '⚠️ WebSocket error';
+
+    ws.onmessage = (event) => {
+        const audioBlob = new Blob([event.data], { type: 'audio/wav' });
+        const audio = new Audio(URL.createObjectURL(audioBlob));
+        audio.play();
+    };
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+
+        // Wait until video metadata is loaded
+        await new Promise(resolve => video.onloadedmetadata = resolve);
+        video.play();
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+
+        setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            canvas.toBlob((blob) => {
+            if (blob) blob.arrayBuffer().then(buffer => ws.send(buffer));
+            }, 'image/jpeg', 0.6);
+        }
+        }, 7000);
+
+    } catch (err) {
+        console.error('Camera error:', err);
+        statusText.textContent = '🚫 Camera access denied or unavailable';
+    }
+    };
+
+  </script>
+</body>
+</html>

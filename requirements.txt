@@ -1,8 +1,9 @@
-ultralytics
-opencv-python
-pyttsx3
-SpeechRecognition
-sounddevice
-soundfile
+fastapi
+uvicorn
 numpy
-pyaudio
+opencv-python
+torch
+ultralytics
+pyttsx3
+pydub
+soundfile
